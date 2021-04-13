@@ -1,0 +1,9 @@
+<launch>
+  <!-- A topic of sensors_msgs/JointState -->
+  <arg name="subscribe_to" default="/joint_state" />
+  <!-- Will publish the control output to the provided topic -->
+  <arg name="publish_to" default="/command" />
+
+  <node name="$(anon mc_rtc_ros_control)" pkg="mc_rtc_ros_control" type="mc_rtc_ros_control" args="subscribe_to:=$(arg subscribe_to) publish_to:=$(arg publish_to)" output="screen" />
+
+</launch>
