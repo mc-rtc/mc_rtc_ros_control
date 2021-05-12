@@ -24,7 +24,19 @@ struct ROSControlInterface
     msg_.data.resize(msg_.layout.dim[0].size);
     msg_.layout.data_offset = 0;
     pub_ = nh_.advertise<std_msgs::Float64MultiArray>("publish_to", 1);
-    sub_ = nh_.subscribe("subscribe_to", 1, &ROSControlInterface::init, this);
+    sub_ = nh_.subscribe("subscribe_to", 1, &ROSControlInterface::joint_callback, this);
+  }
+
+  void joint_callback(const sensor_msgs::JointState & msg)
+  {
+    if(!init_done_)
+    {
+      init(msg);
+    }
+    else
+    {
+      run(msg);
+    }
   }
 
   void init(const sensor_msgs::JointState & msg)
@@ -38,7 +50,7 @@ struct ROSControlInterface
     updateSensors(msg);
     controller_.init(msg.position);
     controller_.running = true;
-    sub_ = nh_.subscribe("subscribe_to", 1, &ROSControlInterface::run, this);
+    init_done_ = true;
   }
 
   void run(const sensor_msgs::JointState & msg)
@@ -79,6 +91,7 @@ struct ROSControlInterface
 
 private:
   mc_control::MCGlobalController controller_;
+  bool init_done_ = false;
 
   ros::NodeHandle nh_;
   ros::Subscriber sub_;
