@@ -66,7 +66,7 @@ struct ROSControlInterface
         auto jIndex = controller_.robot().jointIndexInMBC(i);
         if(jIndex != -1)
         {
-          msg_.data[i] = q[i][0];
+          msg_.data[i] = q[jIndex][0];
         }
         else
         {
