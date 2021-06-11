@@ -41,11 +41,29 @@ struct ROSControlInterface
 
   void init(const sensor_msgs::JointState & msg)
   {
-    if(msg.name != rjo())
+    const auto & rjo = this->rjo();
+    if(msg.name.size() != rjo.size())
     {
       mc_rtc::log::error_and_throw<std::runtime_error>("Look like mc_rtc_ros_control is subscribed to a different "
                                                        "robot than what it expects (got: {}, expected: {})",
-                                                       msg.name, rjo());
+                                                       msg.name.size(), rjo.size());
+    }
+    ros_to_rjo_.resize(msg.name.size());
+    encoders_.resize(msg.name.size());
+    velocity_.resize(msg.name.size());
+    efforts_.resize(msg.name.size());
+    for(size_t i = 0; i < msg.name.size(); ++i)
+    {
+      const auto & n = msg.name[i];
+      auto it = std::find(rjo.begin(), rjo.end(), n);
+      if(it == rjo.end())
+      {
+        mc_rtc::log::error_and_throw<std::runtime_error>(
+            "Joint state passed in to mc_rtc_ros_control for {} which does not exist in the robot reference joint "
+            "order, something is wrong",
+            n);
+      }
+      ros_to_rjo_[i] = std::distance(rjo.begin(), it);
     }
     updateSensors(msg);
     controller_.init(msg.position);
@@ -79,9 +97,16 @@ struct ROSControlInterface
 
   void updateSensors(const sensor_msgs::JointState & msg)
   {
-    controller_.setEncoderValues(msg.position);
-    controller_.setEncoderVelocities(msg.velocity);
-    controller_.setJointTorques(msg.effort);
+    for(size_t i = 0; i < ros_to_rjo_.size(); ++i)
+    {
+      auto rjoIdx = ros_to_rjo_[i];
+      encoders_[rjoIdx] = msg.position[i];
+      velocity_[rjoIdx] = msg.velocity[i];
+      efforts_[rjoIdx] = msg.effort[i];
+    }
+    controller_.setEncoderValues(encoders_);
+    controller_.setEncoderVelocities(velocity_);
+    controller_.setJointTorques(efforts_);
   }
 
   inline const std::vector<std::string> & rjo() const noexcept
@@ -98,6 +123,10 @@ private:
   ros::Publisher pub_;
 
   std_msgs::Float64MultiArray msg_;
+  std::vector<size_t> ros_to_rjo_;
+  std::vector<double> encoders_;
+  std::vector<double> velocity_;
+  std::vector<double> efforts_;
 };
 
 int main(int argc, char * argv[])
