@@ -1,0 +1,67 @@
+name: CI of mc_rtc_ros_control
+
+on:
+  push:
+    paths-ignore:
+      # Changes to those files don't mandate running CI
+      - ".github/workflows/package.yml"
+      - "debian/**"
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-16.04, ubuntu-18.04, ubuntu-20.04]
+        compiler: [gcc]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v1
+      with:
+        submodules: recursive
+    - name: Install ROS
+      run: |
+        set -e
+        set -x
+        pushd .
+        if [ "${{ matrix.os }}" = "ubuntu-16.04" ]
+        then
+          export ROS_DISTRO="kinetic"
+        elif [ "${{ matrix.os }}" = "ubuntu-18.04" ]
+        then
+          export ROS_DISTRO="melodic"
+        else
+          export ROS_DISTRO="noetic"
+        fi
+        sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+        wget http://packages.ros.org/ros.key -O - | sudo apt-key add -
+        curl -1sLf 'https://dl.cloudsmith.io/public/mc-rtc/head/setup.deb.sh' | sudo -E bash
+        sudo apt-get install -qq libmc-rtc-dev ros-${ROS_DISTRO}-mc-rtc-plugin
+        . /opt/ros/${ROS_DISTRO}/setup.bash
+        mkdir -p /tmp/_ci/catkin_ws/src/
+        cd /tmp/_ci/catkin_ws/src
+        catkin_init_workspace
+        cd ../
+        catkin_make
+    - name: Build with catkin
+      run: |
+        set -e
+        set -x
+        PROJECT_DIR=`pwd`
+        cd /tmp/_ci/catkin_ws
+        . devel/setup.bash
+        cp -r $PROJECT_DIR src/
+        catkin_make || exit 1
+    - name: Slack Notification
+      if: failure()
+      uses: archive/github-actions-slack@master
+      with:
+        slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_TOKEN }}
+        slack-channel: '#ci'
+        slack-text: >
+          [mc_rtc_ros_control] Build *${{ matrix.os }}/${{ matrix.build-type }} (${{ matrix.compiler }})* failed on ${{ github.ref }}
