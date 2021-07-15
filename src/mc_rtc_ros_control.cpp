@@ -66,7 +66,7 @@ struct ROSControlInterface
       ros_to_rjo_[i] = std::distance(rjo.begin(), it);
     }
     updateSensors(msg);
-    controller_.init(msg.position);
+    controller_.init(controller_.robot().encoderValues());
     controller_.running = true;
     init_done_ = true;
   }
