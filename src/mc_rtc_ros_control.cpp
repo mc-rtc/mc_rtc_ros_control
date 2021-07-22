@@ -13,6 +13,92 @@
 #  include <spdlog/fmt/bundled/ranges.h>
 #endif
 
+enum class ControlOutput
+{
+  Position,
+  Velocity,
+  Torque
+};
+
+template<ControlOutput OutT>
+void updateControlMessage(const mc_rbdyn::Robot & robot,
+                          const sensor_msgs::JointState & state,
+                          const std::vector<size_t> & rjo_to_ros,
+                          std_msgs::Float64MultiArray & msg)
+{
+  static_assert(static_cast<int>(OutT) > 255, "This must be specialized");
+}
+
+template<>
+void updateControlMessage<ControlOutput::Position>(const mc_rbdyn::Robot & robot,
+                                                   const sensor_msgs::JointState & state,
+                                                   const std::vector<size_t> & rjo_to_ros,
+                                                   std_msgs::Float64MultiArray & msg)
+{
+  const auto & q = robot.mbc().q;
+  const auto & rjo = robot.refJointOrder();
+  for(size_t i = 0; i < rjo.size(); ++i)
+  {
+    const auto & j = rjo[i];
+    auto jIndex = robot.jointIndexInMBC(i);
+    if(jIndex != -1)
+    {
+      msg.data[i] = q[jIndex][0];
+    }
+    else
+    {
+      msg.data[i] = state.position[rjo_to_ros[i]];
+    }
+  }
+}
+
+template<>
+void updateControlMessage<ControlOutput::Velocity>(const mc_rbdyn::Robot & robot,
+                                                   const sensor_msgs::JointState & state,
+                                                   const std::vector<size_t> & rjo_to_ros,
+                                                   std_msgs::Float64MultiArray & msg)
+{
+  const auto & alpha = robot.mbc().alpha;
+  const auto & rjo = robot.refJointOrder();
+  for(size_t i = 0; i < rjo.size(); ++i)
+  {
+    const auto & j = rjo[i];
+    auto jIndex = robot.jointIndexInMBC(i);
+    if(jIndex != -1)
+    {
+      msg.data[i] = alpha[jIndex][0];
+    }
+    else
+    {
+      msg.data[i] = state.velocity[rjo_to_ros[i]];
+    }
+  }
+}
+
+template<>
+void updateControlMessage<ControlOutput::Torque>(const mc_rbdyn::Robot & robot,
+                                                 const sensor_msgs::JointState & state,
+                                                 const std::vector<size_t> & rjo_to_ros,
+                                                 std_msgs::Float64MultiArray & msg)
+{
+  const auto & tau = robot.mbc().jointTorque;
+  const auto & rjo = robot.refJointOrder();
+  for(size_t i = 0; i < rjo.size(); ++i)
+  {
+    const auto & j = rjo[i];
+    auto jIndex = robot.jointIndexInMBC(i);
+    if(jIndex != -1)
+    {
+      msg.data[i] = tau[jIndex][0];
+    }
+    else
+    {
+      msg.data[i] = state.effort[rjo_to_ros[i]];
+    }
+  }
+}
+
+template<ControlOutput OutT>
 struct ROSControlInterface
 {
   ROSControlInterface()
@@ -49,6 +135,7 @@ struct ROSControlInterface
                                                        msg.name.size(), rjo.size());
     }
     ros_to_rjo_.resize(msg.name.size());
+    rjo_to_ros_.resize(msg.name.size());
     encoders_.resize(msg.name.size());
     velocity_.resize(msg.name.size());
     efforts_.resize(msg.name.size());
@@ -64,6 +151,7 @@ struct ROSControlInterface
             n);
       }
       ros_to_rjo_[i] = std::distance(rjo.begin(), it);
+      rjo_to_ros_[ros_to_rjo_[i]] = i;
     }
     updateSensors(msg);
     controller_.init(controller_.robot().encoderValues());
@@ -76,21 +164,7 @@ struct ROSControlInterface
     updateSensors(msg);
     if(controller_.run())
     {
-      const auto & q = controller_.robot().mbc().q;
-      const auto & rjo = this->rjo();
-      for(size_t i = 0; i < rjo.size(); ++i)
-      {
-        const auto & j = rjo[i];
-        auto jIndex = controller_.robot().jointIndexInMBC(i);
-        if(jIndex != -1)
-        {
-          msg_.data[i] = q[jIndex][0];
-        }
-        else
-        {
-          msg_.data[i] = msg.position[i];
-        }
-      }
+      updateControlMessage<OutT>(controller_.robot(), msg, rjo_to_ros_, msg_);
       pub_.publish(msg_);
     }
   }
@@ -124,10 +198,21 @@ private:
 
   std_msgs::Float64MultiArray msg_;
   std::vector<size_t> ros_to_rjo_;
+  std::vector<size_t> rjo_to_ros_;
   std::vector<double> encoders_;
   std::vector<double> velocity_;
   std::vector<double> efforts_;
 };
+
+template<ControlOutput output>
+void run()
+{
+  ROSControlInterface<output> interface;
+  while(ros::ok())
+  {
+    ros::spinOnce();
+  }
+}
 
 int main(int argc, char * argv[])
 {
@@ -141,10 +226,24 @@ int main(int argc, char * argv[])
         mc_rtc::MC_RTC_VERSION, mc_rtc::version());
   }
 
-  ROSControlInterface interface;
-  while(ros::ok())
+  ros::NodeHandle nh("~");
+  bool output_velocity = nh.param<bool>("output_velocity", false);
+  bool output_torque = nh.param<bool>("output_torque", false);
+  if(output_velocity && output_velocity)
   {
-    ros::spinOnce();
+    mc_rtc::log::error_and_throw<std::runtime_error>("Only one of output_velocity or output_torque can be true");
+  }
+  if(!output_velocity && !output_torque)
+  {
+    run<ControlOutput::Position>();
+  }
+  else if(output_velocity)
+  {
+    run<ControlOutput::Velocity>();
+  }
+  else
+  {
+    run<ControlOutput::Torque>();
   }
   return 0;
 }

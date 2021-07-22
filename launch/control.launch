@@ -3,7 +3,14 @@
   <arg name="subscribe_to" default="/joint_state" />
   <!-- Will publish the control output to the provided topic -->
   <arg name="publish_to" default="/command" />
+  <!-- If true the published message contains the desired velocity -->
+  <arg name="output_velocity" default="false" />
+  <!-- If true the published message contains the desired torque -->
+  <arg name="output_torque" default="false" />
 
-  <node name="$(anon mc_rtc_ros_control)" pkg="mc_rtc_ros_control" type="mc_rtc_ros_control" args="subscribe_to:=$(arg subscribe_to) publish_to:=$(arg publish_to)" output="screen" />
+  <node name="$(anon mc_rtc_ros_control)" pkg="mc_rtc_ros_control" type="mc_rtc_ros_control" args="subscribe_to:=$(arg subscribe_to) publish_to:=$(arg publish_to)" output="screen">
+    <param name="output_velocity" type="bool" value="$(arg output_velocity)" />
+    <param name="output_torque" type="bool" value="$(arg output_torque)" />
+  </node>
 
 </launch>
