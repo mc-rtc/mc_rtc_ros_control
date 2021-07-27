@@ -229,7 +229,7 @@ int main(int argc, char * argv[])
   ros::NodeHandle nh("~");
   bool output_velocity = nh.param<bool>("output_velocity", false);
   bool output_torque = nh.param<bool>("output_torque", false);
-  if(output_velocity && output_velocity)
+  if(output_velocity && output_torque)
   {
     mc_rtc::log::error_and_throw<std::runtime_error>("Only one of output_velocity or output_torque can be true");
   }
