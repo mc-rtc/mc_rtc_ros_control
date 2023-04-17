@@ -13,6 +13,8 @@
 #  include <spdlog/fmt/bundled/ranges.h>
 #endif
 
+#include <mc_rtc_ros_control/ROSControlInterface.h>
+
 enum class ControlOutput
 {
   Position,
@@ -21,204 +23,80 @@ enum class ControlOutput
 };
 
 template<ControlOutput OutT>
-void updateControlMessage(const mc_rbdyn::Robot & robot,
-                          const sensor_msgs::JointState & state,
-                          const std::vector<size_t> & rjo_to_ros,
-                          std_msgs::Float64MultiArray & msg)
-{
-  static_assert(static_cast<int>(OutT) > 255, "This must be specialized");
-}
-
-template<>
-void updateControlMessage<ControlOutput::Position>(const mc_rbdyn::Robot & robot,
-                                                   const sensor_msgs::JointState & state,
-                                                   const std::vector<size_t> & rjo_to_ros,
-                                                   std_msgs::Float64MultiArray & msg)
-{
-  const auto & q = robot.mbc().q;
-  const auto & rjo = robot.refJointOrder();
-  for(size_t i = 0; i < rjo.size(); ++i)
-  {
-    const auto & j = rjo[i];
-    auto jIndex = robot.jointIndexInMBC(i);
-    if(jIndex != -1)
-    {
-      msg.data[i] = q[jIndex][0];
-    }
-    else
-    {
-      if(rjo_to_ros[i] < state.position.size())
-      {
-        msg.data[i] = state.position[rjo_to_ros[i]];
-      }
-    }
-  }
-}
-
-template<>
-void updateControlMessage<ControlOutput::Velocity>(const mc_rbdyn::Robot & robot,
-                                                   const sensor_msgs::JointState & state,
-                                                   const std::vector<size_t> & rjo_to_ros,
-                                                   std_msgs::Float64MultiArray & msg)
-{
-  const auto & alpha = robot.mbc().alpha;
-  const auto & rjo = robot.refJointOrder();
-  for(size_t i = 0; i < rjo.size(); ++i)
-  {
-    const auto & j = rjo[i];
-    auto jIndex = robot.jointIndexInMBC(i);
-    if(jIndex != -1)
-    {
-      msg.data[i] = alpha[jIndex][0];
-    }
-    else
-    {
-      if(rjo_to_ros[i] < state.position.size())
-      {
-        msg.data[i] = state.velocity[rjo_to_ros[i]];
-      }
-    }
-  }
-}
-
-template<>
-void updateControlMessage<ControlOutput::Torque>(const mc_rbdyn::Robot & robot,
-                                                 const sensor_msgs::JointState & state,
-                                                 const std::vector<size_t> & rjo_to_ros,
-                                                 std_msgs::Float64MultiArray & msg)
-{
-  const auto & tau = robot.mbc().jointTorque;
-  const auto & rjo = robot.refJointOrder();
-  for(size_t i = 0; i < rjo.size(); ++i)
-  {
-    const auto & j = rjo[i];
-    auto jIndex = robot.jointIndexInMBC(i);
-    if(jIndex != -1)
-    {
-      msg.data[i] = tau[jIndex][0];
-    }
-    else
-    {
-      if(rjo_to_ros[i] < state.position.size())
-      {
-        msg.data[i] = state.effort[rjo_to_ros[i]];
-      }
-    }
-  }
-}
-
-template<ControlOutput OutT>
 struct ROSControlInterface
 {
-  ROSControlInterface()
+  void onRobotState(mc_rtc_ros_control::ROSControlInterface & interface,
+                    const std::vector<double> & encoders,
+                    const std::vector<double> & velocity,
+                    const std::vector<double> & efforts)
   {
-    msg_.layout.dim.resize(1);
-    msg_.layout.dim[0].label = "control";
-    msg_.layout.dim[0].size = rjo().size();
-    msg_.layout.dim[0].stride = msg_.layout.dim[0].size;
-    msg_.data.resize(msg_.layout.dim[0].size);
-    msg_.layout.data_offset = 0;
-    pub_ = nh_.advertise<std_msgs::Float64MultiArray>("publish_to", 1);
-    sub_ = nh_.subscribe("subscribe_to", 1, &ROSControlInterface::joint_callback, this);
-  }
-
-  void joint_callback(const sensor_msgs::JointState & msg)
-  {
+    controller_.setEncoderValues(encoders);
+    controller_.setEncoderVelocities(velocity);
+    controller_.setJointTorques(efforts);
     if(!init_done_)
     {
-      init(msg);
+      controller_.init(controller_.robot().encoderValues());
+      controller_.running = true;
+      init_done_ = true;
     }
     else
     {
-      run(msg);
-    }
-  }
-
-  void init(const sensor_msgs::JointState & msg)
-  {
-    const auto & rjo = this->rjo();
-    if(msg.name.size() > rjo.size())
-    {
-      mc_rtc::log::error_and_throw<std::runtime_error>("Look like mc_rtc_ros_control is subscribed to a different "
-                                                       "robot than what it expects (got: {}, expected: {})",
-                                                       msg.name.size(), rjo.size());
-    }
-    msg_.layout.dim[0].size = msg.name.size();
-    msg_.data.resize(msg_.layout.dim[0].size);
-    ros_to_rjo_.resize(msg.name.size());
-    rjo_to_ros_.resize(rjo.size(), std::numeric_limits<size_t>::max());
-    encoders_.resize(rjo.size(), 0.0);
-    velocity_.resize(rjo.size(), 0.0);
-    efforts_.resize(rjo.size(), 0.0);
-    for(size_t i = 0; i < msg.name.size(); ++i)
-    {
-      const auto & n = msg.name[i];
-      auto it = std::find(rjo.begin(), rjo.end(), n);
-      if(it == rjo.end())
+      if(controller_.run())
       {
-        mc_rtc::log::error_and_throw<std::runtime_error>(
-            "Joint state passed in to mc_rtc_ros_control for {} which does not exist in the robot reference joint "
-            "order, something is wrong",
-            n);
+        const auto & robot = controller_.robot();
+        const auto & mbc = robot.mbc();
+        const auto & command = [&]() -> const std::vector<std::vector<double>> & {
+          if constexpr(OutT == ControlOutput::Position)
+          {
+            command_ = encoders;
+            return mbc.q;
+          }
+          else if constexpr(OutT == ControlOutput::Velocity)
+          {
+            command_ = velocity;
+            return mbc.alpha;
+          }
+          else if constexpr(OutT == ControlOutput::Torque)
+          {
+            command_ = efforts;
+            return mbc.jointTorque;
+          }
+          else
+          {
+            static_assert(static_cast<int>(OutT) > 255, "Not ok");
+          }
+        }();
+        for(size_t i = 0; i < robot.refJointOrder().size(); ++i)
+        {
+          auto jIndex = robot.jointIndexInMBC(i);
+          if(jIndex != -1)
+          {
+            command_[i] = command[jIndex][0];
+          }
+        }
+        interface.sendCommand(command_);
       }
-      ros_to_rjo_[i] = std::distance(rjo.begin(), it);
-      rjo_to_ros_[ros_to_rjo_[i]] = i;
     }
-    updateSensors(msg);
-    controller_.init(controller_.robot().encoderValues());
-    controller_.running = true;
-    init_done_ = true;
-  }
-
-  void run(const sensor_msgs::JointState & msg)
-  {
-    updateSensors(msg);
-    if(controller_.run())
-    {
-      updateControlMessage<OutT>(controller_.robot(), msg, rjo_to_ros_, msg_);
-      pub_.publish(msg_);
-    }
-  }
-
-  void updateSensors(const sensor_msgs::JointState & msg)
-  {
-    for(size_t i = 0; i < ros_to_rjo_.size(); ++i)
-    {
-      auto rjoIdx = ros_to_rjo_[i];
-      encoders_[rjoIdx] = msg.position[i];
-      velocity_[rjoIdx] = msg.velocity[i];
-      efforts_[rjoIdx] = msg.effort[i];
-    }
-    controller_.setEncoderValues(encoders_);
-    controller_.setEncoderVelocities(velocity_);
-    controller_.setJointTorques(efforts_);
   }
 
   inline const std::vector<std::string> & rjo() const noexcept
   {
-    return controller_.robot().module().ref_joint_order();
+    return controller_.robot().refJointOrder();
   }
 
 private:
   mc_control::MCGlobalController controller_;
+  std::vector<double> command_;
   bool init_done_ = false;
-
-  ros::NodeHandle nh_;
-  ros::Subscriber sub_;
-  ros::Publisher pub_;
-
-  std_msgs::Float64MultiArray msg_;
-  std::vector<size_t> ros_to_rjo_;
-  std::vector<size_t> rjo_to_ros_;
-  std::vector<double> encoders_;
-  std::vector<double> velocity_;
-  std::vector<double> efforts_;
 };
 
 template<ControlOutput output>
 void run()
 {
   ROSControlInterface<output> interface;
+  mc_rtc_ros_control::ROSControlInterface ros_iface("subscribe_to", "publish_to", interface.rjo());
+  ros_iface.onStateCallback([&](const std::vector<double> & e, const std::vector<double> & v,
+                                const std::vector<double> & t) { interface.onRobotState(ros_iface, e, v, t); });
   while(ros::ok())
   {
     ros::spinOnce();
