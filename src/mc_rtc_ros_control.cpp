@@ -47,7 +47,10 @@ void updateControlMessage<ControlOutput::Position>(const mc_rbdyn::Robot & robot
     }
     else
     {
-      msg.data[i] = state.position[rjo_to_ros[i]];
+      if(rjo_to_ros[i] < state.position.size())
+      {
+        msg.data[i] = state.position[rjo_to_ros[i]];
+      }
     }
   }
 }
@@ -70,7 +73,10 @@ void updateControlMessage<ControlOutput::Velocity>(const mc_rbdyn::Robot & robot
     }
     else
     {
-      msg.data[i] = state.velocity[rjo_to_ros[i]];
+      if(rjo_to_ros[i] < state.position.size())
+      {
+        msg.data[i] = state.velocity[rjo_to_ros[i]];
+      }
     }
   }
 }
@@ -93,7 +99,10 @@ void updateControlMessage<ControlOutput::Torque>(const mc_rbdyn::Robot & robot,
     }
     else
     {
-      msg.data[i] = state.effort[rjo_to_ros[i]];
+      if(rjo_to_ros[i] < state.position.size())
+      {
+        msg.data[i] = state.effort[rjo_to_ros[i]];
+      }
     }
   }
 }
@@ -128,17 +137,19 @@ struct ROSControlInterface
   void init(const sensor_msgs::JointState & msg)
   {
     const auto & rjo = this->rjo();
-    if(msg.name.size() != rjo.size())
+    if(msg.name.size() > rjo.size())
     {
       mc_rtc::log::error_and_throw<std::runtime_error>("Look like mc_rtc_ros_control is subscribed to a different "
                                                        "robot than what it expects (got: {}, expected: {})",
                                                        msg.name.size(), rjo.size());
     }
+    msg_.layout.dim[0].size = msg.name.size();
+    msg_.data.resize(msg_.layout.dim[0].size);
     ros_to_rjo_.resize(msg.name.size());
-    rjo_to_ros_.resize(msg.name.size());
-    encoders_.resize(msg.name.size());
-    velocity_.resize(msg.name.size());
-    efforts_.resize(msg.name.size());
+    rjo_to_ros_.resize(rjo.size(), std::numeric_limits<size_t>::max());
+    encoders_.resize(rjo.size(), 0.0);
+    velocity_.resize(rjo.size(), 0.0);
+    efforts_.resize(rjo.size(), 0.0);
     for(size_t i = 0; i < msg.name.size(); ++i)
     {
       const auto & n = msg.name[i];
