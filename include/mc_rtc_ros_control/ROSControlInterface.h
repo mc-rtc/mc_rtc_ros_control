@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <rclcpp/rclcpp.hpp>
 
 namespace mc_rtc_ros_control
 {
@@ -26,6 +27,8 @@ struct ROSControlInterface
 
   /** Write on the command topic */
   void sendCommand(const std::vector<double> & command);
+
+  rclcpp::Node::SharedPtr nh;
 
 private:
   std::unique_ptr<ROSControlInterfaceImpl> impl_;
