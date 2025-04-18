@@ -7,10 +7,10 @@ on:
       - ".github/workflows/package.yml"
       - "debian/**"
     branches:
-      - '**'
+      - noetic
   pull_request:
     branches:
-      - '**'
+      - noetic
 
 jobs:
   build:
