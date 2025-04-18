@@ -1,7 +1,10 @@
 mc_rtc_ros_control
 ==
 
-Integration package between mc_rtc and ROS control. Provides a node subscribe to a robot's JointState and publishing a message suitable for a position_controllers/JointGroupPositionController controller.
+Integration package between mc_rtc and ROS2 control. Provides a node subscribe to a robot's JointState and publishing a message suitable for a position_controllers/JointGroupPositionController controller.
+
+**ROS1 implementation can be found [here](https://github.com/mc-rtc/mc_rtc_ros_control/tree/noetic).**
+
 
 Requirements
 --
