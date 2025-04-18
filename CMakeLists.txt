@@ -25,7 +25,11 @@ ament_target_dependencies(
   sensor_msgs
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${ament_INCLUDE_DIRS} $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+target_include_directories(${PROJECT_NAME} PUBLIC 
+  ${ament_INCLUDE_DIRS} 
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> 
+  $<INSTALL_INTERFACE:include>
+)
 target_link_libraries(${PROJECT_NAME} PUBLIC ${ament_LIBRARIES})
 
 add_executable(${PROJECT_NAME}_exe src/${PROJECT_NAME}.cpp)
