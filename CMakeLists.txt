@@ -2,40 +2,48 @@
 # Copyright 2021 mc_rtc development team
 #
 
-cmake_minimum_required(VERSION 3.1)
-set(CMAKE_CXX_STANDARD 11)
+cmake_minimum_required(VERSION 3.10)
+set(CMAKE_CXX_STANDARD 17)
 
 project(mc_rtc_ros_control LANGUAGES CXX VERSION 0.1.0)
 
-find_package(catkin REQUIRED
-  COMPONENTS
-    roscpp
-    std_msgs
-)
-
-catkin_package(
-  CATKIN_DEPENDS roscpp std_msgs
-  INCLUDE_DIRS include
-  LIBRARIES mc_rtc_ros_control
-)
-
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(mc_rtc REQUIRED)
 
+include_directories(
+  include
+  ${ament_INCLUDE_DIRS}
+)
+
 add_library(${PROJECT_NAME} src/ROSControlInterface.cpp)
-target_include_directories(${PROJECT_NAME} PUBLIC ${catkin_INCLUDE_DIRS} $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
-target_link_libraries(${PROJECT_NAME} PUBLIC ${catkin_LIBRARIES})
+
+ament_target_dependencies(
+  ${PROJECT_NAME}
+  rclcpp
+  sensor_msgs
+)
+
+target_include_directories(${PROJECT_NAME} PUBLIC 
+  ${ament_INCLUDE_DIRS} 
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> 
+  $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${ament_LIBRARIES})
 
 add_executable(${PROJECT_NAME}_exe src/${PROJECT_NAME}.cpp)
 target_link_libraries(${PROJECT_NAME}_exe PUBLIC mc_rtc::mc_control ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME}_exe PROPERTIES OUTPUT_NAME ${PROJECT_NAME})
 
-install(DIRECTORY include/${PROJECT_NAME} DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
-
-install(TARGETS ${PROJECT_NAME}_exe ${PROJECT_NAME}
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+install(TARGETS ${PROJECT_NAME}_exe
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY launch
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+install(DIRECTORY 
+  launch
+  DESTINATION share/${PROJECT_NAME})
+
+ament_package()

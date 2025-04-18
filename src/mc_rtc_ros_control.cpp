@@ -1,6 +1,6 @@
-#include <ros/ros.h>
-#include <sensor_msgs/JointState.h>
-#include <std_msgs/Float64MultiArray.h>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 
 #include <mc_control/mc_global_controller.h>
 
@@ -97,15 +97,12 @@ void run()
   mc_rtc_ros_control::ROSControlInterface ros_iface("subscribe_to", "publish_to", interface.rjo());
   ros_iface.onStateCallback([&](const std::vector<double> & e, const std::vector<double> & v,
                                 const std::vector<double> & t) { interface.onRobotState(ros_iface, e, v, t); });
-  while(ros::ok())
-  {
-    ros::spinOnce();
-  }
+  rclcpp::spin(ros_iface.nh);
 }
 
 int main(int argc, char * argv[])
 {
-  ros::init(argc, argv, "mc_rtc_ros_control");
+  rclcpp::init(argc, argv);
 
   if(mc_rtc::MC_RTC_VERSION != mc_rtc::version())
   {
@@ -115,9 +112,10 @@ int main(int argc, char * argv[])
         mc_rtc::MC_RTC_VERSION, mc_rtc::version());
   }
 
-  ros::NodeHandle nh("~");
-  bool output_velocity = nh.param<bool>("output_velocity", false);
-  bool output_torque = nh.param<bool>("output_torque", false);
+  rclcpp::NodeOptions options;
+  rclcpp::Node node("mc_rtc_ros_control", options);
+  bool output_velocity = node.declare_parameter<bool>("output_velocity", false);
+  bool output_torque = node.declare_parameter<bool>("output_torque", false);
   if(output_velocity && output_torque)
   {
     mc_rtc::log::error_and_throw<std::runtime_error>("Only one of output_velocity or output_torque can be true");
